@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automação Cloudflare -> Azion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: #f8fafc;
+      color: #1e293b;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+      width: 100%;
+      max-width: 520px;
+      padding: 40px 36px;
+      position: relative;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      color: #64748b;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 20px;
+      transition: color 0.2s ease;
+    }
+
+    .back-link:hover {
+      color: #f36523;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 0.9rem;
+      color: #64748b;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 8px;
+    }
+
+    .form-group label .required {
+      color: #ef4444;
+      margin-left: 2px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      outline: none;
+      transition: all 0.2s ease;
+      background-color: #ffffff;
+      color: #0f172a;
+    }
+
+    .form-control:focus {
+      border-color: #f36523;
+      box-shadow: 0 0 0 3px rgba(243, 101, 35, 0.15);
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background-color: #f36523;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      margin-top: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-submit:hover {
+      background-color: #d85418;
+    }
+
+    .btn-submit:disabled {
+      background-color: #fdba74;
+      cursor: not-allowed;
+    }
+
+    .spinner {
+      display: none;
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid #ffffff;
+      border-bottom-color: transparent;
+      border-radius: 50%;
+      animation: rotation 1s linear infinite;
+    }
+
+    @keyframes rotation {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .alert {
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-top: 20px;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .alert-success {
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .alert-error {
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <a href="index.html" class="back-link">← Voltar ao Portal</a>
+
+    <div class="header">
+      <h1>Automação Cloudflare -> Azion</h1>
+      <p>Insira as credenciais e IDs para executar a sincronização de Conectores, Applications e Workloads.</p>
+    </div>
+
+    <form id="migrationForm">
+      <div class="form-group">
+        <label for="cloudflare_zone_id">Cloudflare Zone ID <span class="required">*</span></label>
+        <input 
+          type="text" 
+          id="cloudflare_zone_id" 
+          name="Cloudflare Zone ID" 
+          class="form-control" 
+          placeholder="Ex: 023e105f4ecef8ad9ca31a8372d0c353" 
+          required 
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="cloudflare_token">Cloudflare Token <span class="required">*</span></label>
+        <input 
+          type="password" 
+          id="cloudflare_token" 
+          name="Cloudflare Token" 
+          class="form-control" 
+          placeholder="Insira o seu token da Cloudflare" 
+          required 
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="azion_token">Azion Token <span class="required">*</span></label>
+        <input 
+          type="password" 
+          id="azion_token" 
+          name="Azion Token" 
+          class="form-control" 
+          placeholder="Insira o seu token da Azion" 
+          required 
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="azion_edge_app_id">Azion Base Edge App ID (Origin) <span class="required">*</span></label>
+        <input 
+          type="text" 
+          id="azion_edge_app_id" 
+          name="Azion Base Edge App ID (Origin)" 
+          class="form-control" 
+          placeholder="Ex: 12345" 
+          required 
+        />
+      </div>
+
+      <button type="submit" id="submitBtn" class="btn-submit">
+        <span class="spinner" id="btnSpinner"></span>
+        <span id="btnText">Submit</span>
+      </button>
+    </form>
+
+    <div id="alertSuccess" class="alert alert-success">
+      ✅ Sincronização concluída. <a id="reportLink" href="#" target="_blank" rel="noopener">Abrir relatório</a>
+    </div>
+
+    <div id="alertError" class="alert alert-error">
+      ❌ <span id="alertErrorText">Ocorreu um erro ao enviar a requisição. Tente novamente.</span>
+    </div>
+  </div>
+
+  <script>
+    // Proxy no domínio do portal (functions/migration-proxy.js), que adiciona a chave do webhook.
+    const MIGRATION_API_URL = "/api/cf-migration";
+
+    const form = document.getElementById('migrationForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const btnText = document.getElementById('btnText');
+    const alertSuccess = document.getElementById('alertSuccess');
+    const alertError = document.getElementById('alertError');
+    const alertErrorText = document.getElementById('alertErrorText');
+    const reportLink = document.getElementById('reportLink');
+
+    const ERROR_MESSAGES = {
+      401: 'Acesso não autorizado ao serviço de migração.',
+      403: 'Acesso não autorizado ao serviço de migração.',
+      502: 'Não foi possível contatar o serviço de migração.',
+    };
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      alertSuccess.style.display = 'none';
+      alertError.style.display = 'none';
+
+      submitBtn.disabled = true;
+      btnSpinner.style.display = 'inline-block';
+      btnText.textContent = 'Processando...';
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch(MIGRATION_API_URL, {
+          method: 'POST',
+          body: formData
+        });
+        const body = await response.text();
+
+        if (!response.ok) {
+          throw new Error(ERROR_MESSAGES[response.status] || `Erro ${response.status} ao executar a sincronização.`);
+        }
+
+        if (reportLink.href.startsWith('blob:')) URL.revokeObjectURL(reportLink.href);
+        reportLink.href = URL.createObjectURL(new Blob([body], { type: 'text/html' }));
+
+        alertSuccess.style.display = 'block';
+        form.reset();
+      } catch (error) {
+        alertErrorText.textContent = error.message || 'Ocorreu um erro ao enviar a requisição. Tente novamente.';
+        alertError.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        btnSpinner.style.display = 'none';
+        btnText.textContent = 'Submit';
+      }
+    });
+  </script>
+</body>
+</html>

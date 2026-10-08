@@ -1,0 +1,167 @@
+{
+  "name": "CF Migration - Cloudflare proxied → Azion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "8469c71d-08fb-4530-ac12-d09a4002a420",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -3184,
+        608
+      ],
+      "id": "9a6cb5f2-5051-48d4-ba16-3ea9a8e33007",
+      "name": "Webhook",
+      "webhookId": "8469c71d-08fb-4530-ac12-d09a4002a420",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "CF Migration - Webhook Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst zoneId = (body['Cloudflare Zone ID'] || '').trim();\nconst token = (body['Cloudflare Token'] || '').trim();\n\nif (!zoneId || !token) {\n  throw new Error('Cloudflare Zone ID ou Token não foram fornecidos.');\n}\n\nconst PER_PAGE = 100;\nlet page = 1;\nlet totalPages = 1;\nconst allRecords = [];\n\ndo {\n  let response;\n  try {\n    response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?per_page=${PER_PAGE}&page=${page}`,\n      headers: { Authorization: `Bearer ${token}` },\n      json: true,\n    });\n  } catch (error) {\n    const status = error.httpCode || error.response?.status || error.statusCode;\n    if (String(status) === '403' || String(status) === '401') {\n      throw new Error(\"Cloudflare recusou o token: inválido, expirado ou sem a permissão 'Zone.DNS:Read'.\");\n    }\n    throw error;\n  }\n\n  allRecords.push(...(response?.result || []));\n  totalPages = response?.result_info?.total_pages || 1;\n  page++;\n} while (page <= totalPages);\n\nreturn [{ json: { result: allRecords } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2960,
+        608
+      ],
+      "id": "9c76e210-cb3f-46cb-9339-0205cf686b0e",
+      "name": "Get Cloudflare DNS Records"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agrupa os registros proxied (nuvem laranja) por destino (IP ou CNAME).\n// Cada destino vira um \"site\": 1 Connector + 1 Application + 1 Workload.\nconst records = $input.first().json.result || [];\nconst PROXIABLE = ['A', 'AAAA', 'CNAME'];\nconst grouped = {};\n\nfor (const record of records) {\n  if (record.proxied !== true || !PROXIABLE.includes(record.type)) continue;\n  const content = record.content;\n  if (!grouped[content]) grouped[content] = new Set();\n  grouped[content].add(record.name);\n}\n\nconst slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n\n// Os nomes são determinísticos: é o que permite reaproveitar os recursos numa nova execução.\nconst groups = Object.entries(grouped).map(([content, names]) => {\n  const domains = [...names].sort();\n  return {\n    target_content: content,\n    domains,\n    connector_name: `conn-${slug(content)}`.slice(0, 100),\n    application_name: `app-${slug(content)}`.slice(0, 100),\n    workload_name: `workload-${slug(domains[0])}`.slice(0, 100),\n  };\n});\n\n// Sempre devolve 1 item, mesmo sem registros proxied, para o relatório/resposta rodarem.\nreturn [{ json: { total_records: records.length, groups } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2736,
+        608
+      ],
+      "id": "2dbd63f6-11d9-4079-87fb-084f00cc7db8",
+      "name": "Filter Proxied & Group"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Provisiona cada grupo na Azion de forma idempotente:\n// procura pelo nome antes de criar e só altera o que estiver diferente.\nconst body = $('Webhook').first().json.body || {};\nconst azToken = (body['Azion Token'] || '').trim();\nconst baseAppId = String(body['Azion Base Edge App ID (Origin)'] || '').trim();\nconst { groups } = $input.first().json;\nconst helpers = this.helpers;\n\nif (!azToken || !baseAppId) {\n  throw new Error('Azion Token ou Base Edge App ID não foram fornecidos.');\n}\n\nconst AZ = 'https://api.azion.com/v4';\nconst CONNECTOR_BEHAVIORS = ['set_connector', 'set_origin'];\n\nasync function az(method, path, payload) {\n  try {\n    return await helpers.httpRequest({\n      method,\n      url: `${AZ}${path}`,\n      headers: {\n        Accept: 'application/json',\n        Authorization: `TOKEN ${azToken}`,\n        'Content-Type': 'application/json',\n      },\n      body: payload,\n      json: true,\n    });\n  } catch (e) {\n    const status = e.httpCode || e.response?.status || e.statusCode || '';\n    const detail = e.response?.body ?? e.description ?? e.message;\n    throw new Error(`${method} ${path} → ${status} ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);\n  }\n}\n\nasync function findByName(path, name) {\n  const res = await az('GET', `${path}?name=${encodeURIComponent(name)}&page_size=100`);\n  return (res?.results || []).find((r) => r.name === name) || null;\n}\n\nconst idOf = (res) => res?.data?.id ?? res?.id;\n\nasync function ensureConnector(g) {\n  const found = await findByName('/workspace/connectors', g.connector_name);\n  if (found) return { id: found.id, status: 'reutilizado' };\n  const res = await az('POST', '/workspace/connectors', {\n    name: g.connector_name,\n    active: true,\n    type: 'http',\n    attributes: {\n      addresses: [{ active: true, address: g.target_content, http_port: 80, https_port: 443 }],\n      connection_options: {\n        dns_resolution: 'both',\n        transport_policy: 'preserve',\n        http_version_policy: 'http1_1',\n        host: '${host}',\n        path_prefix: '',\n        following_redirect: false,\n        real_ip_header: 'X-Real-IP',\n        real_port_header: 'X-Real-PORT',\n      },\n    },\n  });\n  return { id: idOf(res), status: 'criado' };\n}\n\nasync function ensureApplication(g) {\n  const found = await findByName('/workspace/applications', g.application_name);\n  if (found) return { id: found.id, status: 'reutilizado' };\n  const res = await az('POST', `/workspace/applications/${baseAppId}/clone`, { name: g.application_name });\n  return { id: idOf(res), status: 'criado' };\n}\n\n// Troca, nas regras de request da app clonada, todo set_connector/set_origin pelo connector do grupo.\nasync function pointRulesToConnector(appId, connectorId) {\n  const res = await az('GET', `/workspace/applications/${appId}/request_rules?page_size=100`);\n  const rules = res?.results || [];\n  const withConnector = rules.filter((r) => (r.behaviors || []).some((b) => CONNECTOR_BEHAVIORS.includes(b.type)));\n\n  if (withConnector.length === 0) {\n    // A app modelo não define connector em nenhuma regra: adiciona na regra padrão (primeira).\n    const def = rules[0];\n    if (!def) throw new Error('A Application modelo não tem regras de request.');\n    await az('PATCH', `/workspace/applications/${appId}/request_rules/${def.id}`, {\n      behaviors: [...def.behaviors, { type: 'set_connector', attributes: { value: connectorId } }],\n    });\n    return 'atualizado';\n  }\n\n  let changed = false;\n  for (const rule of withConnector) {\n    const alreadyOk = rule.behaviors.every(\n      (b) => !CONNECTOR_BEHAVIORS.includes(b.type) || (b.type === 'set_connector' && b.attributes?.value === connectorId),\n    );\n    if (alreadyOk) continue;\n    const behaviors = rule.behaviors.map((b) =>\n      CONNECTOR_BEHAVIORS.includes(b.type) ? { type: 'set_connector', attributes: { value: connectorId } } : b,\n    );\n    await az('PATCH', `/workspace/applications/${appId}/request_rules/${rule.id}`, { behaviors });\n    changed = true;\n  }\n  return changed ? 'atualizado' : 'reutilizado';\n}\n\nasync function ensureWorkload(g) {\n  const found = await findByName('/workspace/workloads', g.workload_name);\n  if (found) {\n    const current = [...(found.domains || [])].sort();\n    if (JSON.stringify(current) === JSON.stringify(g.domains)) return { id: found.id, status: 'reutilizado' };\n    await az('PATCH', `/workspace/workloads/${found.id}`, { domains: g.domains });\n    return { id: found.id, status: 'atualizado' };\n  }\n  // Sem certificado por enquanto: emissão de TLS fica para um segundo step.\n  const res = await az('POST', '/workspace/workloads', {\n    name: g.workload_name,\n    active: true,\n    infrastructure: 1,\n    protocols: {\n      http: { versions: ['http1', 'http2'], http_ports: [80], https_ports: [443], quic_ports: [] },\n    },\n    domains: g.domains,\n    workload_domain_allow_access: true,\n  });\n  return { id: idOf(res), status: 'criado' };\n}\n\n// O vínculo Workload → Application é feito por um deployment, não no corpo do workload.\nasync function ensureDeployment(workloadId, appId, appName) {\n  const res = await az('GET', `/workspace/workloads/${workloadId}/deployments`);\n  const deployments = res?.results || [];\n  const strategy = { type: 'default', attributes: { application: appId } };\n\n  if (deployments.some((d) => d.strategy?.attributes?.application === appId)) return 'reutilizado';\n\n  if (deployments.length > 0) {\n    await az('PATCH', `/workspace/workloads/${workloadId}/deployments/${deployments[0].id}`, { strategy });\n    return 'atualizado';\n  }\n\n  await az('POST', `/workspace/workloads/${workloadId}/deployments`, {\n    name: `deploy-${appName}`.slice(0, 100),\n    active: true,\n    current: true,\n    strategy,\n  });\n  return 'criado';\n}\n\nconst results = [];\n\nfor (const g of groups) {\n  const r = { ...g, connector: null, application: null, rules: null, workload: null, deployment: null, error: null };\n  try {\n    r.connector = await ensureConnector(g);\n    r.application = await ensureApplication(g);\n    r.rules = await pointRulesToConnector(r.application.id, r.connector.id);\n    r.workload = await ensureWorkload(g);\n    r.deployment = await ensureDeployment(r.workload.id, r.application.id, g.application_name);\n  } catch (e) {\n    // Um grupo com erro não interrompe os demais.\n    r.error = e.message;\n  }\n  results.push(r);\n}\n\nreturn [{ json: { results } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2512,
+        608
+      ],
+      "id": "4b1f0a52-7c3e-4d8a-9f61-2e5d8c7a1b30",
+      "name": "Azion - Provisionar"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Relatório simples em HTML. O mesmo `results` pode alimentar um nó de e-mail ou Slack depois.\nconst { results } = $input.first().json;\nconst { total_records } = $('Filter Proxied & Group').first().json;\n\nconst esc = (s) => String(s ?? '-').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n\nconst COLORS = { criado: '#28a745', atualizado: '#0056b3', reutilizado: '#6c757d' };\nconst cell = (name, step) => {\n  if (!step) return '<td><span style=\"color:#999\">—</span></td>';\n  const status = typeof step === 'string' ? step : step.status;\n  const id = typeof step === 'object' && step.id ? ` <small>#${esc(step.id)}</small>` : '';\n  return `<td>${name ? `<code>${esc(name)}</code>${id}<br>` : ''}<span style=\"color:${COLORS[status] || '#333'};font-weight:bold\">${esc(status)}</span></td>`;\n};\n\nconst ok = results.filter((r) => !r.error).length;\nconst failed = results.length - ok;\n\nconst rows = results\n  .map(\n    (r) => `\n    <tr>\n      <td>${r.domains.map(esc).join('<br>')}</td>\n      <td><code>${esc(r.target_content)}</code></td>\n      ${cell(r.connector_name, r.connector)}\n      ${cell(r.application_name, r.application)}\n      ${cell(null, r.rules)}\n      ${cell(r.workload_name, r.workload)}\n      ${cell(null, r.deployment)}\n      <td>${r.error ? `<span style=\"color:#dc3545;font-weight:bold\">✖ Erro</span><br><small>${esc(r.error)}</small>` : '<span style=\"color:#28a745;font-weight:bold\">✔ OK</span>'}</td>\n    </tr>`,\n  )\n  .join('');\n\nconst htmlContent = `\n<style>\n  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f6f8; color: #333; }\n  .report-wrapper { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; }\n  h2 { color: #0056b3; font-size: 20px; margin-bottom: 5px; }\n  .subtitle { color: #666; font-size: 13px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px; }\n  table { width: 100%; border-collapse: collapse; margin-top: 10px; }\n  th, td { border: 1px solid #e1e4e8; padding: 10px; text-align: left; font-size: 13px; vertical-align: top; }\n  th { background-color: #f8f9fa; color: #495057; font-weight: 600; }\n  tr:nth-child(even) { background-color: #fcfcfc; }\n  code { background: #eef1f6; padding: 3px 6px; border-radius: 4px; font-family: monospace; color: #0056b3; font-size: 12px; }\n  small { color: #666; word-break: break-word; }\n  .actions { margin-top: 20px; text-align: right; }\n  .btn { background: #0056b3; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; }\n  @media print { .actions { display: none; } }\n</style>\n\n<div class=\"report-wrapper\">\n  <h2>Relatório de Provisionamento - Azion</h2>\n  <div class=\"subtitle\">\n    Gerado em: ${new Date().toLocaleString('pt-BR')} ·\n    ${total_records} registros DNS lidos · ${results.length} origens proxied ·\n    ${ok} OK · ${failed} com erro\n  </div>\n  ${\n    results.length === 0\n      ? '<p>Nenhum registro proxied (nuvem laranja) encontrado na zona. Nada foi criado.</p>'\n      : `<table>\n    <thead>\n      <tr>\n        <th>Domínio(s)</th><th>Origem</th><th>Connector</th><th>Application</th>\n        <th>Regras → Connector</th><th>Workload</th><th>Deployment</th><th>Status</th>\n      </tr>\n    </thead>\n    <tbody>${rows}</tbody>\n  </table>`\n  }\n  <div class=\"actions\">\n    <button class=\"btn\" onclick=\"window.print()\">📄 Exportar / Salvar como PDF</button>\n  </div>\n</div>\n`;\n\nreturn [{ json: { htmlContent, summary: { total_records, groups: results.length, ok, failed }, results } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2288,
+        608
+      ],
+      "id": "6143f0cc-b89b-4ca7-99f3-6a695b492dba",
+      "name": "Gerar HTML do Relatório"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.htmlContent }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -2064,
+        608
+      ],
+      "id": "01be6226-77e0-4922-9ba3-bcc8a64b85e0",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Cloudflare DNS Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cloudflare DNS Records": {
+      "main": [
+        [
+          {
+            "node": "Filter Proxied & Group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Proxied & Group": {
+      "main": [
+        [
+          {
+            "node": "Azion - Provisionar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azion - Provisionar": {
+      "main": [
+        [
+          {
+            "node": "Gerar HTML do Relatório",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar HTML do Relatório": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}
