@@ -47,11 +47,16 @@ As chamadas usam caminho relativo, então funcionam em qualquer domínio ligado 
 
 ### 2. Azion
 1. Crie uma Function com o conteúdo de `functions/migration-proxy.js`.
-2. Em **Environment Variables** no Azion Console, crie:
-   - `N8N_CF_WEBHOOK_URL`: `https://<n8n>/webhook/8469c71d-08fb-4530-ac12-d09a4002a420`
-   - `N8N_BIND_WEBHOOK_URL`: `https://<n8n>/webhook/bind-to-azion`
-   - `N8N_WEBHOOK_KEY`: o mesmo valor da credencial do n8n
-3. Instancie a Function na Application do portal e crie uma regra no Rules Engine:
+2. Instancie a Function na Application do portal e preencha o **JSON Args** da instância:
+   ```json
+   {
+     "N8N_CF_WEBHOOK_URL": "https://<n8n>/webhook/8469c71d-08fb-4530-ac12-d09a4002a420",
+     "N8N_BIND_WEBHOOK_URL": "https://<n8n>/webhook/bind-to-azion",
+     "N8N_WEBHOOK_KEY": "<mesmo valor da credencial do n8n>"
+   }
+   ```
+   Alternativa: criar as mesmas chaves em **Environment Variables** no Azion Console. O JSON Args tem prioridade.
+3. Crie uma regra no Rules Engine:
    - **Critério**: `${uri}` começa com `/api/`
    - **Comportamento**: `Run Function` → proxy acima
    - **Ordem**: coloque essa regra **em primeiro lugar**. O preset cria a regra "Redirect to index.html for Subpaths", que reescreveria `/api/cf-migration` para `/api/cf-migration/index.html` no storage.

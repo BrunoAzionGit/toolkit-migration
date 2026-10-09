@@ -2,7 +2,8 @@
 // O front chama só /api/... no domínio do portal; o domínio do n8n e a chave
 // ficam nas variáveis de ambiente da Azion e nunca chegam ao navegador.
 //
-// Variáveis de ambiente (Azion Console > Environment Variables):
+// Configuração: JSON Args da instância da Function na Application (preferencial)
+// ou Environment Variables do Azion Console, com os mesmos nomes:
 //   N8N_CF_WEBHOOK_URL    webhook da automação Cloudflare -> Azion
 //   N8N_BIND_WEBHOOK_URL  webhook da importação BIND
 //   N8N_WEBHOOK_KEY       valor configurado na credencial Header Auth do n8n
@@ -14,9 +15,9 @@ const ROUTES = {
   '/api/bind-import': { env: 'N8N_BIND_WEBHOOK_URL', maxBytes: 5 * 1024 * 1024 },
 };
 
-addEventListener('fetch', (event) => event.respondWith(handle(event.request)));
+addEventListener('fetch', (event) => event.respondWith(handle(event.request, event.args || {})));
 
-async function handle(request) {
+async function handle(request, args) {
   const url = new URL(request.url);
   const route = ROUTES[url.pathname.replace(/\/+$/, '')];
   if (!route) {
@@ -33,8 +34,8 @@ async function handle(request) {
     return text(403, 'Origem não permitida.');
   }
 
-  const target = Azion.env.get(route.env);
-  const key = Azion.env.get('N8N_WEBHOOK_KEY');
+  const target = setting(args, route.env);
+  const key = setting(args, 'N8N_WEBHOOK_KEY');
   if (!target || !key) {
     return text(500, `Proxy sem configuração (${route.env} / N8N_WEBHOOK_KEY).`);
   }
@@ -62,6 +63,15 @@ async function handle(request) {
     status: upstream.status,
     headers: { 'Content-Type': upstream.headers.get('content-type') || 'text/plain; charset=utf-8' },
   });
+}
+
+function setting(args, name) {
+  if (args[name]) return args[name];
+  try {
+    return Azion.env.get(name);
+  } catch (e) {
+    return undefined;
+  }
 }
 
 function text(status, message) {
