@@ -46,11 +46,17 @@ As chamadas usam caminho relativo, então funcionam em qualquer domínio ligado 
 4. Recomendado: use a mesma credencial no webhook `bind-to-azion` (o proxy já envia o header).
 
 ### 2. Azion
-A Function, a instância e a regra `/api/` estão declaradas em `azion.config.cjs` e são criadas pelo deploy (GitHub Action `azion-deploy.yml` a cada push na `main`). Não crie esses recursos à mão no Console: o próximo deploy sobrescreve.
-
-Falta só cadastrar os segredos em **Environment Variables** no Azion Console:
-- `N8N_CF_WEBHOOK_URL`: `https://<n8n>/webhook/8469c71d-08fb-4530-ac12-d09a4002a420`
-- `N8N_BIND_WEBHOOK_URL`: `https://<n8n>/webhook/bind-to-azion`
-- `N8N_WEBHOOK_KEY`: o mesmo valor da credencial do n8n
-
-Não use o JSON Args da instância para isso: o deploy reenvia os args do `azion.config.cjs` e apagaria os valores, e colocá-los no config os exporia neste repositório público.
+1. Crie uma Function com o conteúdo de `functions/migration-proxy.js`.
+2. Instancie a Function na Application do portal e preencha o **JSON Args** da instância:
+   ```json
+   {
+     "N8N_CF_WEBHOOK_URL": "https://<n8n>/webhook/8469c71d-08fb-4530-ac12-d09a4002a420",
+     "N8N_BIND_WEBHOOK_URL": "https://<n8n>/webhook/bind-to-azion",
+     "N8N_WEBHOOK_KEY": "<mesmo valor da credencial do n8n>"
+   }
+   ```
+   Alternativa: criar as mesmas chaves em **Environment Variables** no Azion Console. O JSON Args tem prioridade.
+3. Crie uma regra no Rules Engine:
+   - **Critério**: `${uri}` começa com `/api/`
+   - **Comportamento**: `Run Function` → proxy acima
+   - **Ordem**: coloque essa regra **em primeiro lugar**. O preset cria a regra "Redirect to index.html for Subpaths", que reescreveria `/api/cf-migration` para `/api/cf-migration/index.html` no storage.
