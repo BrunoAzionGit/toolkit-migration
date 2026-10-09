@@ -284,6 +284,11 @@
           throw new Error(ERROR_MESSAGES[response.status] || `Erro ${response.status} ao executar a sincronização.`);
         }
 
+        // O n8n responde 200 vazio quando o workflow falha antes de gerar o relatório.
+        if (!body.trim()) {
+          throw new Error('A sincronização falhou no n8n antes de gerar o relatório. Confira os dados informados ou a execução no n8n.');
+        }
+
         if (reportLink.href.startsWith('blob:')) URL.revokeObjectURL(reportLink.href);
         reportLink.href = URL.createObjectURL(new Blob([body], { type: 'text/html' }));
 
