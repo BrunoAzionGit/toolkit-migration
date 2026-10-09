@@ -4,12 +4,12 @@ Este repositório contém a estrutura pronta para deploy estático no **Azion Co
 
 ## Arquivos do Projeto
 
-Só a pasta `public/` é publicada. As demais pastas ficam fora do deploy.
+Só a pasta `www/` é publicada (padrão do preset `html` da Azion). As demais pastas ficam fora do deploy.
 
-- `public/index.html`: Portal principal contendo os links para os importadores.
-- `public/bind-import.html`: Formulário de importação de arquivo BIND DNS.
-- `public/gemini-code-1785458000658.html`: Redirecionamento do nome antigo para `bind-import.html`.
-- `public/cf-migration-index.html`: Formulário de automação Cloudflare -> Azion.
+- `www/index.html`: Portal principal contendo os links para os importadores.
+- `www/bind-import.html`: Formulário de importação de arquivo BIND DNS.
+- `www/gemini-code-1785458000658.html`: Redirecionamento do nome antigo para `bind-import.html`.
+- `www/cf-migration-index.html`: Formulário de automação Cloudflare -> Azion.
 - `functions/migration-proxy.js`: Azion Function que repassa os formulários para o n8n (não publicada como arquivo estático).
 - `n8n/cf-migration.workflow.json`: Workflow do n8n da automação Cloudflare -> Azion (não publicado).
 
@@ -18,11 +18,13 @@ Só a pasta `public/` é publicada. As demais pastas ficam fora do deploy.
 1. Crie um novo projeto no **Azion Console** selecionando **Deploy via Git**.
 2. Conecte com o seu repositório do GitHub.
 3. Utilize as seguintes configurações:
-   - **Preset / Framework**: `Static` ou `HTML`
+   - **Preset / Framework**: `HTML`
    - **Root Directory**: `./`
-   - **Build Command**: *(deixar em branco)*
-   - **Install Command**: *(deixar em branco)*
-   - **Output Directory**: `./public`
+   - **Install Command**: `npm install`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `./www`
+
+O `package.json` existe só porque o deploy via Git roda `npm`; o site não tem dependências.
 
 ## Chamadas ao n8n
 
@@ -52,3 +54,4 @@ As chamadas usam caminho relativo, então funcionam em qualquer domínio ligado 
 3. Instancie a Function na Application do portal e crie uma regra no Rules Engine:
    - **Critério**: `${uri}` começa com `/api/`
    - **Comportamento**: `Run Function` → proxy acima
+   - **Ordem**: coloque essa regra **em primeiro lugar**. O preset `html` cria a regra "Redirect to index.html for Subpaths", que reescreveria `/api/cf-migration` para `/api/cf-migration/index.html` no storage.
