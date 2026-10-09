@@ -22,6 +22,15 @@ module.exports = {
     preset: 'astro',
     polyfills: true
   },
+  // Proxy autenticado para o n8n (ver README). Os segredos ficam em Environment
+  // Variables no Azion Console, nunca aqui: este repositório é público.
+  functions: [
+    {
+      name: 'migration-proxy',
+      path: './functions/migration-proxy.js',
+      runtime: 'azion_js'
+    }
+  ],
   storage: [
     {
       name: 'toolkit-migration-astro-v1',
@@ -44,6 +53,13 @@ module.exports = {
   applications: [
     {
       name: 'toolkit-migration-astro-v1',
+      functionsEnabled: true,
+      functionsInstances: [
+        {
+          name: 'migration-proxy',
+          ref: 'migration-proxy'
+        }
+      ],
       cache: [
         {
           name: 'toolkit-migration-astro-v1',
@@ -57,6 +73,30 @@ module.exports = {
       ],
       rules: {
         request: [
+          {
+            // Precisa ser a primeira: a regra de subpaths reescreveria /api/* para index.html.
+            name: 'API Proxy n8n',
+            description: 'Encaminha /api/* para a Function migration-proxy',
+            active: true,
+            criteria: [
+              [
+                {
+                  variable: '${uri}',
+                  conditional: 'if',
+                  operator: 'starts_with',
+                  argument: '/api/'
+                }
+              ]
+            ],
+            behaviors: [
+              {
+                type: 'run_function',
+                attributes: {
+                  value: 'migration-proxy'
+                }
+              }
+            ]
+          },
           {
             name: 'Deliver Static Assets and Set Cache Policy',
             description:
