@@ -3,3 +3,7 @@ dist/
 .edge/
 .vercel/
 .env
+#Paths added by Azion CLI
+.edge/
+.vulcan
+.open-next

@@ -1,0 +1,68 @@
+{
+  "name": "toolkit-migration-astro-v1",
+  "bucket": "toolkit-migration-astro-v1",
+  "preset": "astro",
+  "env": "production",
+  "prefix": "20261009001233",
+  "rotate-prefix": true,
+  "not-first-run": true,
+  "function": [],
+  "application": {
+    "id": 1791507389,
+    "name": "toolkit-migration-astro-v1"
+  },
+  "domain": {
+    "id": 0,
+    "name": "__DEFAULT__",
+    "domain_name": "",
+    "url": ""
+  },
+  "rt-purge": {
+    "purge_on_publish": true
+  },
+  "origin": null,
+  "rules-engine": {
+    "created": false,
+    "rules": [
+      {
+        "id": 748876,
+        "name": "Deliver Static Assets and Set Cache Policy",
+        "phase": "request"
+      },
+      {
+        "id": 748877,
+        "name": "Redirect to index.html",
+        "phase": "request"
+      },
+      {
+        "id": 748878,
+        "name": "Redirect to index.html for Subpaths",
+        "phase": "request"
+      }
+    ]
+  },
+  "cache-settings": [
+    {
+      "id": 359271,
+      "name": "toolkit-migration-astro-v1"
+    }
+  ],
+  "workloads": {
+    "id": 1791505167,
+    "name": "toolkit-migration-astro-v1",
+    "domains": [],
+    "url": "https://jgtulqnjzoq.map.azionedge.net",
+    "deployment_id": [
+      {
+        "id": 340812,
+        "name": "toolkit-migration-astro-v1"
+      }
+    ]
+  },
+  "connectors": [
+    {
+      "id": 156204,
+      "name": "toolkit-migration-astro-v1"
+    }
+  ]
+}
