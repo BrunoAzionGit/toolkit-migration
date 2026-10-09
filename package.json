@@ -2,8 +2,8 @@
   "name": "toolkit-migration",
   "version": "1.0.0",
   "private": true,
-  "description": "Portal estático do toolkit de migração Azion. Os arquivos publicados ficam em www/ (preset html).",
+  "description": "Portal estático do toolkit de migração Azion. Fonte em www/; o build copia para dist/ (preset Astro da Azion).",
   "scripts": {
-    "build": "echo \"Site estático: nada para compilar, arquivos em www/\""
+    "build": "rm -rf dist && cp -R www dist"
   }
 }

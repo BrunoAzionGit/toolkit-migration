@@ -4,7 +4,7 @@ Este repositório contém a estrutura pronta para deploy estático no **Azion Co
 
 ## Arquivos do Projeto
 
-Só a pasta `www/` é publicada (padrão do preset `html` da Azion). As demais pastas ficam fora do deploy.
+As páginas ficam em `www/`. O build copia essa pasta para `dist/`, que é o que a Azion publica. As demais pastas ficam fora do deploy.
 
 - `www/index.html`: Portal principal contendo os links para os importadores.
 - `www/bind-import.html`: Formulário de importação de arquivo BIND DNS.
@@ -18,13 +18,13 @@ Só a pasta `www/` é publicada (padrão do preset `html` da Azion). As demais p
 1. Crie um novo projeto no **Azion Console** selecionando **Deploy via Git**.
 2. Conecte com o seu repositório do GitHub.
 3. Utilize as seguintes configurações:
-   - **Preset / Framework**: `HTML`
+   - **Preset / Framework**: `Astro`
    - **Root Directory**: `./`
    - **Install Command**: `npm install`
    - **Build Command**: `npm run build`
-   - **Output Directory**: `./www`
+   - **Output Directory**: `./dist`
 
-O `package.json` existe só porque o deploy via Git roda `npm`; o site não tem dependências.
+O site não usa Astro. O Console não oferece preset de HTML puro, e o preset Astro é o único da lista que só roda `npm run build` e publica `./dist`, com as regras de site multi-página. O `npm run build` apenas copia `www/` para `dist/`.
 
 ## Chamadas ao n8n
 
@@ -54,4 +54,4 @@ As chamadas usam caminho relativo, então funcionam em qualquer domínio ligado 
 3. Instancie a Function na Application do portal e crie uma regra no Rules Engine:
    - **Critério**: `${uri}` começa com `/api/`
    - **Comportamento**: `Run Function` → proxy acima
-   - **Ordem**: coloque essa regra **em primeiro lugar**. O preset `html` cria a regra "Redirect to index.html for Subpaths", que reescreveria `/api/cf-migration` para `/api/cf-migration/index.html` no storage.
+   - **Ordem**: coloque essa regra **em primeiro lugar**. O preset cria a regra "Redirect to index.html for Subpaths", que reescreveria `/api/cf-migration` para `/api/cf-migration/index.html` no storage.
